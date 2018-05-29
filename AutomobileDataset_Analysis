@@ -1,0 +1,52 @@
+#Dataset from UCI - https://archive.ics.uci.edu/ml/datasets/automobile
+
+auto <- read.csv("AutomobilesDataset.csv", header = TRUE, na.strings = "?")
+summary(auto)
+
+sapply(auto, function(x)sum(is.na(x)))
+
+library(Hmisc)
+auto$normalized.losses <- as.numeric(impute(auto$normalized.losses, mean) )
+auto$num.of.doors <- as.numeric(impute(auto$num.of.doors),median)
+auto$bore <- as.numeric(impute(auto$bore), mean)
+auto$stroke <- as.numeric(impute(auto$stroke), mean)
+auto$horsepower <- as.numeric(impute(auto$horsepower),mean)
+auto$peak.rpm <- as.numeric(impute(auto$peak.rpm),mean)
+auto$price <- as.numeric(impute(auto$price),mean)
+
+#Considering subset of numeric variables
+which(sapply(auto,function(x)is.numeric(x)),arr.ind = TRUE)
+auto.sel <- subset(auto, select=c(num.of.doors, curb.weight, horsepower, 
+                                  peak.rpm, city.mpg, price))
+auto.sel.set2 <- subset(auto, select = c(price,symboling,wheel.base,length,width))
+auto.sel.set3 <- subset(auto, select = c(price,engine.size,bore,stroke,compression.ratio,highway.mpg))
+
+library(caTools)
+split <- sample.split(auto, SplitRatio = 2/3)
+set.seed(2017)
+train <- subset(auto,split == TRUE)
+test <- subset(auto, split == FALSE)
+
+library(psych)
+pairs.panels(auto.sel, col = "red")
+pairs.panels(auto.sel.set2, col = "red")
+pairs.panels(auto.sel.set3, col = "red")
+# price ~ horsepower (Pearson Co-eff: 0.82) + 
+#          curb.weight (Pearson Co-eff: 0.75)+ 
+#          city.mpeg (Pearson Co-eff: -0.67) + 
+#          length (PC = 0.69) +
+#          width (PC = 0.72) +
+#          engine.size (PC = 0.86) +
+#          highway.mpg (PC = -0.69)
+#
+
+fit <- lm(price ~ curb.weight +  engine.size , data = train)
+summary(fit)
+
+fit2 <- lm(price ~ curb.weight +  horsepower , data = train)
+summary(fit2)
+
+pred <- predict(fit, newdata = test)
+pred2 <- predict(fit2, newdata = test)
+comp <- data.frame(cbind(pred, test$price, pred2, pred - test$price,
+                         pred2 - test$price))
