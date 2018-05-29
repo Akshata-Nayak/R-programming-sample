@@ -1,0 +1,324 @@
+require(doParallel)
+registerDoParallel(cores = detectCores() - 1)
+
+newData <- "HumanActivityTest.R"
+#if (!file.exists(newData)){
+  dataset <- read.table("activity_labels.txt")
+  activityHeading <- dataset$V2
+  dataset <- read.table("features.txt")
+  attrbs <- dataset$V2
+  
+  X_test <- read.table("test/X_test.txt")
+  colnames(X_test) <- attrbs
+  
+  Y_test <- read.table("test/y_test.txt")
+  colnames(Y_test) <- "Activities"
+  
+ # levels(Y_test$Activities) --> NULL
+  Y_test$Activities <- as.factor(Y_test$Activities)
+  levels(Y_test$Activities) <- activityHeading
+  
+  subjects_test <- read.table("test/subject_test.txt")
+  colnames(subjects_test) <- "subjects_test"
+  subjects_test <- as.factor(subjects_test)
+  Y_test <- as.factor(Y_test)
+  testData <- cbind(X_test,Y_test,subjects_test)
+  
+  ##########################################################################
+  #                    TRAINING DATA
+  ##########################################################################
+  X_train <- read.table("train/X_train.txt")
+  colnames(X_train) <- attrbs
+  
+  Y_train <- read.table("train/y_train.txt")
+  colnames(Y_train) <- "Activities"
+  
+  # levels(Y_train$Activities) --> NULL
+  Y_train$Activities <- as.factor(Y_train$Activities)
+  levels(Y_train$Activities) <- activityHeading
+  
+  subjects_train <- read.table("train/subject_train.txt")
+  colnames(subjects_train) <- "subjects_train"
+  # subjects_train <- as.factor(subjects_train)
+  # Y_train <- as.factor(Y_train)
+  #   -- Error in sort.list(y) : 'x' must be atomic for 'sort.list'
+  #   -- Have you called 'sort' on a list?
+  #     --   try using unlist:
+  #     --   cc3 <- as.data.frame(table(unlist(cc2)))
+  #     --   or extract the variable directly:
+  #     -- cc3 <- as.data.frame(table(cc2$V1))
+  
+  trainData <- cbind(X_train,Y_train,subjects_train)
+  
+  # Changing the testData and trainData to remove subjects. This colum refers to the subjects used for testing.
+  # Currently I am not sure if this is required to be considered
+  
+  testData <- cbind(X_test,Y_test)
+  testData$Activities <- as.factor(testData$Activities )
+  
+  trainData <- cbind(X_train, Y_train)
+  trainData$Activities <- as.factor(trainData$Activities)
+  
+  #Replace comma and brackets with underscore in column names
+  colnames(testData) <- gsub(',','_',colnames(testData), fixed = TRUE )
+  colnames(testData) <- gsub('()','_',colnames(testData), fixed = TRUE )
+  colnames(testData) <- gsub('_-','',colnames(testData), fixed = TRUE )
+  colnames(testData) <- gsub('(','_',colnames(testData), fixed = TRUE )
+  colnames(testData) <- gsub('-','_',colnames(testData), fixed = TRUE )
+  colnames(testData) <- gsub(')','_',colnames(testData), fixed = TRUE )
+  # colnames(testData) <- gsub("_$",'',colnames(testData), fixed = TRUE ) -- not working
+  colnames(trainData) <- gsub(',','_',colnames(trainData), fixed = TRUE )
+  colnames(trainData) <- gsub('()','_',colnames(trainData), fixed = TRUE )
+  colnames(trainData) <- gsub('_-','',colnames(trainData), fixed = TRUE )
+  colnames(trainData) <- gsub('-','_',colnames(trainData), fixed = TRUE ) 
+  colnames(trainData) <- gsub('(','_',colnames(trainData), fixed = TRUE )
+  colnames(trainData) <- gsub(')','_',colnames(trainData), fixed = TRUE )
+  
+  testData_labels <- testData[,562]
+  trainData_labels <- trainData[,562]
+  
+  # Few Column Names were repeated. Thus finding the unique columns.
+  # The data between same column names is almost similar
+  testData <- testData[unique(colnames(testData))]
+  trainData <- trainData[unique(colnames(trainData))]
+  
+  # nrow(testData) + nrow(trainData)
+  #  10299
+  # sqrt(10299)
+  #   101.484  Lets start with considering K=102
+
+  # install.packages('class')
+  #   ------------------- KNN -----------------------------------
+  require(class)
+  knn_alg <- knn(train = X_train, test = X_test, cl = trainData_labels, k = 102)
+  
+  #compare the results of test set with predicted values
+  table(testData_labels,knn_alg)  # Very good o/p. Lets check for different k values
+  confusionMatrix(testData_labels, knn_alg)
+  
+  # Overall Statistics
+  # 
+  # Accuracy : 0.8839          
+  # 95% CI : (0.8718, 0.8953)    -- CI is confidence intervals
+  # No Information Rate : 0.2155          
+  # P-Value [Acc > NIR] : < 2.2e-16       
+  # 
+  # Kappa : 0.8603          
+  # Mcnemar's Test P-Value : NA        
+  
+  # require(caret)
+  # t_ctrl <- trainControl(method = "repeatedcv", number = 5, repeats = 5)
+  # 
+  # knn_grid <- expand.grid(kmax = c(98,100,102,104,106), distance = 2,
+  #                         kernel = c("rectangular","gaussian","cos"))
+  # 
+  # knn.train <- train(Activities ~ ., data = trainData, method = "kknn",
+  #                    trControl = t_ctrl, tuneGrid = knn_grid,
+  #                    preProcess = c("center","scale"))
+
+  ################################################################################
+  #                 RANDOM FOREST
+  ################################################################################
+  require(randomForest)
+  rf <- randomForest(formula = Activities ~ ., data=trainData,
+                     importance = TRUE,
+                     proximity = TRUE)
+  print(rf) 
+  # Type of random forest: classification
+  # Number of trees: 500
+  # No. of variables tried at each split: 21
+  # 
+  # OOB estimate of  error rate: 1.82%   ==> Out of Bag error: 1.82 ==> ~ 98% accuracy
+  attributes(rf)
+  rf$confusion
+  
+  library(caret)
+  p1 <- predict(rf,trainData)
+  head(p1)
+  head(trainData_labels)
+  tail(p1)
+  tail(trainData_labels)
+  confusionMatrix(p1, trainData_labels)
+  
+  #Since we are testing it back on training set, the accuracy is 100%. Lets try for test set
+  # Overall Statistics
+  # 
+  # Accuracy : 1          
+  # 95% CI : (0.9995, 1)
+  # No Information Rate : 0.1914     
+  # P-Value [Acc > NIR] : < 2.2e-16  
+  # 
+  # Kappa : 1          
+  # Mcnemar's Test P-Value : NA 
+  
+  p2 <- predict(rf, testData)
+  head(p2)
+  head(testData_labels)
+  confusionMatrix(p2,testData_labels)
+  # Overall Statistics
+  # 
+  # Accuracy : 0.9257           <--- 92.57%    
+  # 95% CI : (0.9156, 0.9349)
+  # No Information Rate : 0.1822          
+  # P-Value [Acc > NIR] : < 2.2e-16       
+  # 
+  # Kappa : 0.9107          
+  # Mcnemar's Test P-Value : NA   
+    #}
+  
+  # To check error rate
+  plot(rf)
+  #here in our plot, OOB error vs trees shows that after around "200 trees" the error remains constant
+  
+  # Lets choose mtry for 200 trees
+  t <- tuneRF(trainData[,-478], trainData[,478],
+              stepFactor = 1, # lets try with stepfactor = 1
+              ntreeTry = 200, # based on our previous decision
+              trace = TRUE,
+              improve = 0.05 )
+  # stepFactor 1 didnot give good plot. Trying with 0.5 and 0.25
+  t <- tuneRF(trainData[,-478], trainData[,478],
+              stepFactor = 0.25, 
+              ntreeTry = 200, # based on our previous decision
+              trace = TRUE,
+              improve = 0.05 )
+  
+  # At mtry = 21, the OOB error is low
+  
+  # Using these values in RF
+  rf <- randomForest(formula = Activities ~ ., data=trainData,
+                     ntree = 200,
+                     mtry = 21,
+                     importance = TRUE,
+                     proximity = TRUE)
+  p1 <- predict(rf, testData)
+  confusionMatrix(p1, testData_labels)
+  #Overall Statistics
+  
+  # Accuracy : 0.9287      --> 93% accurate    
+  # 95% CI : (0.9189, 0.9378)
+  # No Information Rate : 0.1822          
+  # P-Value [Acc > NIR] : < 2.2e-16       
+  # 
+  # Kappa : 0.9143          
+  # Mcnemar's Test P-Value : NA              
+  
+  
+  # which variables play impotant role
+  varImpPlot(rf,
+             sort = TRUE,
+             n.var = 10)
+  importance(rf)  #<- shows values used for plotting
+  varUsed(rf)
+   
+  ############################################################################
+  #                             SVM
+  ############################################################################
+  library(e1071)
+  svm.model <- svm(formula = Activities ~ ., data = trainData)
+  summary(svm.model)
+  # Parameters:
+  # SVM-Type:  C-classification 
+  # SVM-Kernel:  radial 
+  # cost:  1 
+  # gamma:  0.002096436 
+  # 
+  # Number of Support Vectors:  2256
+  # plot(svm.model, data = trainData,
+  #      Activities ~ .)
+  
+  svm.p1 <- predict(svm.model, testData)
+  summary(svm.p1)
+  confusionMatrix(svm.p1, testData_labels)
+  # 
+  # Overall Statistics
+  # 
+  # Accuracy : 0.9555          
+  # 95% CI : (0.9475, 0.9627)
+  # No Information Rate : 0.1822          
+  # P-Value [Acc > NIR] : < 2.2e-16       
+  # 
+  # Kappa : 0.9466          
+  # Mcnemar's Test P-Value : NA  
+  
+  # To check misclassification rate
+  svm.tab <- table(svm.p1,testData_labels)
+  svm.mrate <- 1 - (sum(diag(svm.tab))/sum(svm.tab))  #app 4.4%
+  
+  # The previous plot was with radial kernel. Lets try with linear.
+  # radial kernel is mostly selected by default in classification type
+  
+  svm.model <- svm(formula = Activities ~ ., data = trainData,
+                   kernel = "linear")
+  summary(svm.model)
+  svm.p1 <- predict(svm.model, testData)
+  summary(svm.p1)
+  confusionMatrix(svm.p1, testData_labels)  #Accuracy = 96.1%
+  svm.tab <- table(svm.p1,testData_labels)
+  svm.mrate <- 1 - (sum(diag(svm.tab))/sum(svm.tab))  # 3.9%
+ 
+  # The previous plot was with linear kernel. Lets try with polynomial
+  
+  svm.model <- svm(formula = Activities ~ ., data = trainData,
+                   kernel = "polynomial")
+  summary(svm.model)
+  svm.p1 <- predict(svm.model, testData)
+  summary(svm.p1)
+  confusionMatrix(svm.p1, testData_labels)  #Accuracy = 93.32%
+  svm.tab <- table(svm.p1,testData_labels)
+  svm.mrate <- 1 - (sum(diag(svm.tab))/sum(svm.tab))
+  
+  # The previous plot was with polynomial kernel. Lets try with sigmoid
+  
+  svm.model <- svm(formula = Activities ~ ., data = trainData,
+                   kernel = "sigmoid")
+  summary(svm.model)
+  svm.p1 <- predict(svm.model, testData)
+  summary(svm.p1)
+  confusionMatrix(svm.p1, testData_labels)  #Accuracy = 87.28%
+  svm.tab <- table(svm.p1,testData_labels)
+  svm.mrate <- 1 - (sum(diag(svm.tab))/sum(svm.tab))
+  
+  
+  # Thus, lets use linear kernel
+  # Tuning of model to choose cost and gamma values
+  svm.tune <- tune(svm, Activities ~ ., data = trainData[1:1000,],
+                  ranges = list(epsilon = seq(0,1,0.1), cost = 2^(1:3)))
+  # small value for cost is considered since the dataset is huge. Will fine tune further if required
+  
+  plot(svm.tune)
+  summary(svm.tune)
+  
+  # Best Performance: 0.006
+  # Epsilon: 0
+  # Cost : 8
+  # Will try with increase in cost
+  
+  svm.tune2 <- tune(svm, Activities ~ ., data = trainData[1:1000,],
+                   ranges = list(epsilon = seq(0,0.5,0.1), cost = 2^(3:7)))
+  plot(svm.tune2)
+  summary(svm.tune)
+  
+  # Values still remain the same
+  # best parameters:
+  # epsilon cost
+  # 0        8
+  # best performance: 0.006 
+  
+  svm.tune$best.model
+  # Parameters:
+  # SVM-Type:  C-classification 
+  # SVM-Kernel:  radial 
+  # cost:  8 
+  # gamma:  0.002096436 
+  # 
+  # Number of Support Vectors:  497
+  
+  svm.model <- svm(formula = Activities ~ ., data = trainData,
+                   kernel = "radial", cost = 8, gamma = 0.002096436 )
+  svm.p <- predict(svm.model, testData)
+  summary(svm.p)
+  confusionMatrix(svm.p, testData_labels)  #Accuracy = 95.89%
+  svm.tab <- table(svm.p,testData_labels)
+  svm.mrate <- 1 - (sum(diag(svm.tab))/sum(svm.tab))
+  
